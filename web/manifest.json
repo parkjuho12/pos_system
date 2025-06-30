@@ -1,11 +1,11 @@
 {
-    "name": "pos_1",
-    "short_name": "pos_1",
+    "name": "POS System",
+    "short_name": "POS System",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "POS System - Point of Sale application for restaurant management.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

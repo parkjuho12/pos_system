@@ -438,7 +438,7 @@ class _PaymentPageState extends State<PaymentPage> {
                                           child: Text(
                                             '$_quantity',
                                             style: TextStyle(
-                                              fontSize: 140,
+                                              fontSize: 120,
                                               fontWeight: FontWeight.bold,
                                               color: Colors.black,
                                             ),
