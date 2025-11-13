@@ -6,9 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:math';
 
-enum PaymentMethod { qr, card, cash }
+enum PaymentMethod { qr }
 
 class PaymentPage extends StatefulWidget {
   final String token;
@@ -74,40 +73,59 @@ class _PaymentPageState extends State<PaymentPage> {
     });
   }
 
-  String _generateRandomCardNumber() {
-    final random = Random();
-    String cardNumber = (random.nextInt(5) + 1).toString();
-    for (int i = 0; i < 15; i++) {
-      cardNumber += random.nextInt(10).toString();
-    }
-    return cardNumber;
-  }
-
-  Future<void> _processQrPayment(String qrToken) async {
+  Future<void> _processQrPayment(String qrHash) async {
     if (_isQrProcessing) return;
 
     setState(() => _isQrProcessing = true);
 
     try {
-      final response = await http.post(
-        Uri.parse('https://qr.pjhpjh.kr/pos_node/pay'),
+      // 1단계: QR 검증
+      final verifyResponse = await http.post(
+        Uri.parse('https://qr.pjhpjh.kr/seahawk1/payment/verify-qr'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${widget.token}',
         },
         body: jsonEncode({
-          'qrToken': qrToken,
-          'menuName': '${widget.restaurant} 식권 ${_quantity}개',
-          'ticketCount': _quantity,
+          'qr_hash': qrHash,
+        }),
+      );
+      
+      final verifyData = jsonDecode(verifyResponse.body);
+
+      if (verifyResponse.statusCode != 200 || verifyData['status'] != 'success') {
+        // QR 검증 실패
+        setState(() {
+          _isQrModeActive = false;
+          _isLastPaymentSuccessful = false;
+          _resultMessage = verifyData['message'] ?? 'QR 코드 검증 실패';
+          _showResultOverlay = true;
+        });
+        return;
+      }
+
+      // 2단계: 결제 처리
+      final totalAmount = widget.price * _quantity;
+      final paymentResponse = await http.post(
+        Uri.parse('https://qr.pjhpjh.kr/seahawk1/payment/record'),
+        headers: {  
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${widget.token}',
+        },
+        body: jsonEncode({
+          'qr_hash': qrHash,
+          'menu_name': '${widget.restaurant} 식권 ${_quantity}개',
+          'amount': totalAmount,
           'restaurant': widget.restaurant,
         }),
       );
-      final responseData = jsonDecode(response.body);
+      
+      final paymentData = jsonDecode(paymentResponse.body);
 
       setState(() {
         _isQrModeActive = false;
-        _isLastPaymentSuccessful = response.statusCode == 200;
-        _resultMessage = responseData['message'] ?? '결제 결과를 확인할 수 없습니다.';
+        _isLastPaymentSuccessful = paymentResponse.statusCode == 200 && paymentData['status'] == 'success';
+        _resultMessage = paymentData['message'] ?? '결제 결과를 확인할 수 없습니다.';
         _showResultOverlay = true;
       });
     } catch (e) {
@@ -117,6 +135,8 @@ class _PaymentPageState extends State<PaymentPage> {
         _resultMessage = '결제 처리 중 오류가 발생했습니다.';
         _showResultOverlay = true;
       });
+    } finally {
+      setState(() => _isQrProcessing = false);
     }
   }
 
@@ -127,58 +147,6 @@ class _PaymentPageState extends State<PaymentPage> {
       setState(() => _isQrModeActive = true);
       _qrFocusNode.requestFocus();
       return;
-    }
-
-    setState(() {
-      _isQrModeActive = false;
-      _loading = true;
-    });
-
-    try {
-      String? cardNumber;
-      if (method == PaymentMethod.card) {
-        cardNumber = _generateRandomCardNumber();
-      }
-
-      final totalPrice = widget.price * _quantity;
-      final response = await http.post(
-        Uri.parse('https://qr.pjhpjh.kr/pos_node/manual_pay'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${widget.token}',
-        },
-        body: jsonEncode({
-          'menuName': '${widget.restaurant} 식권 ${_quantity}개',
-          'amount': totalPrice,
-          'method': method.name,
-          'cardNumber': cardNumber,
-          'restaurant': widget.restaurant,
-        }),
-      );
-
-      final data = jsonDecode(response.body);
-      String serverMessage = data['message'] ?? '결제 완료';
-      String displayMessage;
-
-      if (serverMessage.contains('CARD')) {
-        displayMessage = serverMessage.replaceFirst('CARD', '카드');
-      } else if (serverMessage.contains('CASH')) {
-        displayMessage = serverMessage.replaceFirst('CASH', '현금');
-      } else {
-        displayMessage = serverMessage;
-      }
-
-      setState(() {
-        _isLastPaymentSuccessful = response.statusCode == 200;
-        _resultMessage = displayMessage;
-        _showResultOverlay = true;
-      });
-    } catch (e) {
-      setState(() {
-        _isLastPaymentSuccessful = false;
-        _resultMessage = '결제 처리 중 오류가 발생했습니다.';
-        _showResultOverlay = true;
-      });
     }
   }
 
@@ -610,7 +578,7 @@ class _PaymentPageState extends State<PaymentPage> {
               focusNode: _qrFocusNode,
               autofocus: true,
               onSubmitted: (value) {
-                if (_isQrModeActive && value.trim().isNotEmpty) {
+                if (value.trim().isNotEmpty && !_isQrProcessing && !_showResultOverlay) {
                   _processQrPayment(value.trim());
                 } else {
                   _qrController.clear();
@@ -627,24 +595,10 @@ class _PaymentPageState extends State<PaymentPage> {
   }
 
   String _getPaymentMethodName(PaymentMethod method) {
-    switch (method) {
-      case PaymentMethod.qr:
-        return 'QR 결제';
-      case PaymentMethod.card:
-        return '카드 결제';
-      case PaymentMethod.cash:
-        return '현금 결제';
-    }
+    return 'QR 결제';
   }
 
   IconData _getPaymentMethodIcon(PaymentMethod method) {
-    switch (method) {
-      case PaymentMethod.qr:
-        return Icons.qr_code_scanner_rounded;
-      case PaymentMethod.card:
-        return Icons.credit_card;
-      case PaymentMethod.cash:
-        return Icons.payments_rounded;
-    }
+    return Icons.qr_code_scanner_rounded;
   }
 }
