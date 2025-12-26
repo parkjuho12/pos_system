@@ -16,15 +16,15 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _passwordController = TextEditingController();
   bool _isPasswordVisible = false;
   bool _isLoading = false;
+  String _selectedRestaurant = '아질리아';
   String _errorMessage = '';
-  String _selectedRestaurant = '아질리아'; // 기본 선택
 
   Future<void> _login() async {
     if (_passwordController.text.isEmpty) {
-      setState(() {
-        _errorMessage = '비밀번호를 입력해주세요.';
-      });
-      return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('비밀번호를 입력해주세요'), backgroundColor: Colors.red),
+      );
+      return; 
     }
 
     setState(() {
@@ -33,30 +33,29 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
+      final username =
+          _selectedRestaurant == '피오니' ? 'pos_admin2' : 'pos_admin';
+
       final response = await http.post(
-        Uri.parse('https://qr.pjhpjh.kr/seahawk1/auth/pos-login'),
+        Uri.parse('https://qr.pjhpjh.kr/pos_node/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'username': username,
           'password': _passwordController.text,
         }),
       );
 
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200 && data['status'] == 'success') {
-        if (data['token'] != null && data['user'] != null) {
-          final String restaurantFromServer = data['user']['restaurant'];
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['token'] != null) {
           final String menuName;
           final int price;
-          
-          if (restaurantFromServer == '아질리아') {
+          if (_selectedRestaurant == '아질리아') {
             menuName = '아질리아 식권';
             price = 4800;
-          } else if (restaurantFromServer == '피오니') {
+          } else {
             menuName = '피오니 식권';
             price = 5000;
-          } else {
-            throw Exception('알 수 없는 식당입니다.');
           }
 
           Navigator.pushReplacement(
@@ -65,7 +64,7 @@ class _LoginPageState extends State<LoginPage> {
               builder:
                   (_) => PaymentPage(
                     token: data['token'],
-                    restaurant: restaurantFromServer,
+                    restaurant: _selectedRestaurant,
                     menuName: menuName,
                     price: price,
                   ),
@@ -75,13 +74,14 @@ class _LoginPageState extends State<LoginPage> {
           throw Exception('API 응답에 토큰이 없습니다.');
         }
       } else {
+        final errorData = jsonDecode(response.body);
         final errorMessage =
-            data['message'] ?? 'POS 비밀번호가 일치하지 않습니다';
+            errorData['message'] ?? '로그인에 실패했습니다. 비밀번호를 확인해주세요.';
         throw Exception(errorMessage);
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'POS 비밀번호가 일치하지 않습니다.\n올바른 비밀번호를 확인해주세요.';
+        _errorMessage = '비밀번호가 잘못되었습니다. 다시 확인해주세요.';
       });
     } finally {
       setState(() {
@@ -128,138 +128,69 @@ class _LoginPageState extends State<LoginPage> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Center(
-                          child: Text(
-                            '경복대학교 학식 POS 로그인',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
+                        Text(
+                          ' 경복대학교 학식 POS 로그인',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        SizedBox(height: 16),
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.grey[300]!),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _selectedRestaurant,
+                              isExpanded: true,
+                              dropdownColor: Colors.white,
+                              items: [
+                                DropdownMenuItem(
+                                  value: '아질리아',
+                                  child: Text(
+                                    '아질리아',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: '피오니',
+                                  child: Text(
+                                    '피오니',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() {
+                                    _selectedRestaurant = value;
+                                  });
+                                }
+                              },
                             ),
                           ),
                         ),
-                        SizedBox(height: 24),
-                        // 식당 선택 탭
-                        Row(
-                          children: [
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedRestaurant = '아질리아';
-                                  });
-                                },
-                                child: Container(
-                                  padding: EdgeInsets.symmetric(vertical: 16),
-                                  decoration: BoxDecoration(
-                                    color: _selectedRestaurant == '아질리아'
-                                        ? const Color.fromARGB(230, 2, 47, 123)
-                                        : Colors.grey[200],
-                                    borderRadius: BorderRadius.only(
-                                      topLeft: Radius.circular(8),
-                                      bottomLeft: Radius.circular(8),
-                                    ),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Icon(
-                                        Icons.restaurant,
-                                        color: _selectedRestaurant == '아질리아'
-                                            ? Colors.white
-                                            : Colors.grey[600],
-                                        size: 28,
-                                      ),
-                                      SizedBox(height: 4),
-                                      Text(
-                                        '아질리아',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: _selectedRestaurant == '아질리아'
-                                              ? Colors.white
-                                              : Colors.grey[700],
-                                        ),
-                                      ),
-                                      Text(
-                                        '지운관 1층',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: _selectedRestaurant == '아질리아'
-                                              ? Colors.white70
-                                              : Colors.grey[600],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedRestaurant = '피오니';
-                                  });
-                                },
-                                child: Container(
-                                  padding: EdgeInsets.symmetric(vertical: 16),
-                                  decoration: BoxDecoration(
-                                    color: _selectedRestaurant == '피오니'
-                                        ? const Color.fromARGB(230, 123, 2, 47)
-                                        : Colors.grey[200],
-                                    borderRadius: BorderRadius.only(
-                                      topRight: Radius.circular(8),
-                                      bottomRight: Radius.circular(8),
-                                    ),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Icon(
-                                        Icons.restaurant_menu,
-                                        color: _selectedRestaurant == '피오니'
-                                            ? Colors.white
-                                            : Colors.grey[600],
-                                        size: 28,
-                                      ),
-                                      SizedBox(height: 4),
-                                      Text(
-                                        '피오니',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: _selectedRestaurant == '피오니'
-                                              ? Colors.white
-                                              : Colors.grey[700],
-                                        ),
-                                      ),
-                                      Text(
-                                        '창조관 1층',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: _selectedRestaurant == '피오니'
-                                              ? Colors.white70
-                                              : Colors.grey[600],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: 24),
-                        // 비밀번호 입력
+                        SizedBox(height: 16),
                         TextField(
                           controller: _passwordController,
                           obscureText: !_isPasswordVisible,
-                          style: TextStyle(color: Colors.black, fontSize: 16),
+                          style: TextStyle(color: Colors.black),
                           decoration: InputDecoration(
-                            labelText: 'POS 비밀번호',
-                            hintText: _selectedRestaurant == '아질리아' 
-                                ? '아질리아12!@'
-                                : '피오니12!@',
-                            hintStyle: TextStyle(color: Colors.grey[400]),
+                            labelText: '비밀번호',
                             labelStyle: TextStyle(color: Colors.black),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(6),
@@ -289,80 +220,62 @@ class _LoginPageState extends State<LoginPage> {
                               },
                             ),
                           ),
-                          onSubmitted: (value) {
-                            if (!_isLoading) _login();
-                          },
                         ),
-                        SizedBox(height: 16),
-                        // 로그인 버튼
+                        if (_errorMessage.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              top: 12.0,
+                              bottom: 4.0,
+                            ),
+                            child: Center(
+                              child: Text(
+                                _errorMessage,
+                                style: TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                        SizedBox(height: _errorMessage.isNotEmpty ? 12 : 24),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
                             onPressed: _isLoading ? null : _login,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: _selectedRestaurant == '아질리아'
-                                  ? const Color.fromARGB(230, 2, 47, 123)
-                                  : const Color.fromARGB(230, 123, 2, 47),
+                              backgroundColor: const Color.fromARGB(
+                                230,
+                                2,
+                                47,
+                                123,
+                              ),
                               foregroundColor: Colors.white,
                               elevation: 0,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(6),
                               ),
-                              padding: EdgeInsets.symmetric(vertical: 16),
+                              padding: EdgeInsets.symmetric(vertical: 12),
                             ),
-                            child: _isLoading
-                                ? SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.login, size: 20),
-                                      SizedBox(width: 8),
-                                      Text(
-                                        '$_selectedRestaurant 로그인',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                            child:
+                                _isLoading
+                                    ? SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
                                       ),
-                                    ],
-                                  ),
+                                    )
+                                    : Text(
+                                      '로그인',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                           ),
                         ),
-                        if (_errorMessage.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 12.0),
-                            child: Container(
-                              padding: EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.red[50],
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: Colors.red[200]!),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.error_outline, color: Colors.red[700], size: 20),
-                                  SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      _errorMessage,
-                                      style: TextStyle(
-                                        color: Colors.red[900],
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
                       ],
                     ),
                   ),
